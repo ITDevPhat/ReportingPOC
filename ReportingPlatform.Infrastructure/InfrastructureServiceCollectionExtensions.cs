@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ReportingPlatform.Application.Interfaces;
+using ReportingPlatform.Infrastructure.Execution;
 using ReportingPlatform.Infrastructure.Metadata;
 using ReportingPlatform.Infrastructure.Persistence;
 
@@ -15,6 +16,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(configuration);
         services.AddScoped<ISqlConnectionFactory, SqlConnectionFactory>();
         services.AddScoped<ISemanticMetadataProvider, SqlSemanticMetadataProvider>();
+        services.AddScoped<IQueryExecutor, SqlServerQueryExecutor>();
 
         return services;
     }
