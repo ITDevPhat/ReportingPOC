@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.72" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ReportingPlatform.Application\ReportingPlatform.Application.csproj" />
+    <ProjectReference Include="..\ReportingPlatform.Domain\ReportingPlatform.Domain.csproj" />
+  </ItemGroup>
+	<ItemGroup>
+		<Folder Include="Repositories\" />
+		<Folder Include="Metadata\" />
+		<Folder Include="SqlGeneration\" />
+		<Folder Include="Execution\" />
+		<Folder Include="DependencyInjection\" />
+	</ItemGroup>
+
+</Project>
