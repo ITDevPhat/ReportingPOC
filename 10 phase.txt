@@ -1,0 +1,270 @@
+Hiện tại architecture của bạn nên chia thành khoảng 10 phase chính.
+
+Không nên chia quá nhỏ kiểu micro-task từ đầu.
+10 phase này map đúng với evolution của một reporting/semantic platform thật.
+
+Full Roadmap
+Phase	Tên	Mục tiêu chính
+1	Metadata API	Expose semantic catalog
+2	Semantic Resolver	Resolve semantic key → physical mapping
+3	Relationship Resolver	Tìm join path giữa entities
+4	Query Request Contract	Chuẩn hóa JSON query contract
+5	Query Plan Builder	Build intermediate execution plan
+6	SQL Generator	Generate SQL Server query
+7	Query Executor API	Execute SQL + return tabular result
+8	Telerik UI Builder	Frontend metadata-driven builder
+9	Report Persistence + Async Execution	Save template/history/background run
+10	Production Hardening	Security/cache/export/observability
+Giải thích từng phase
+Phase 1 — Metadata API ✅
+
+Bạn vừa làm xong.
+
+Vai trò
+
+Expose metadata từ:
+
+rpt.ReportingEntities
+rpt.ReportingFields
+rpt.ReportingRelationships
+Kết quả
+
+Frontend/API giờ biết:
+
+- Có entity nào
+- Có field nào
+- Field datatype gì
+- Relationship nào tồn tại
+
+Nhưng engine vẫn chưa hiểu semantic key.
+
+Phase 2 — Semantic Resolver
+Vai trò
+
+Convert:
+
+patient.gender
+
+thành:
+
+[clinical].[Patients].[Gender]
+Đây là phase cực quan trọng
+
+Nó tạo abstraction layer:
+
+UI / JSON request
+      ↓
+Semantic field
+      ↓
+Physical SQL column
+
+Không có phase này:
+
+SQL generator sẽ thành hardcoded mess
+security impossible
+relationship resolver khó làm
+Kết quả cuối
+
+Engine hiểu:
+
+semanticKey
+→ entity
+→ field
+→ physical table
+→ physical column
+→ capabilities
+Phase 3 — Relationship Resolver
+Vai trò
+
+Nếu request có:
+
+clinical_study.study_code
+study_site.country
+patient.gender
+
+engine phải biết:
+
+FROM patient
+JOIN clinical_study
+JOIN study_site
+Đây là graph traversal engine
+
+Input:
+
+baseEntity + requiredEntities
+
+Output:
+
+join path
+Đây là chỗ engine bắt đầu giống Power BI semantic model.
+Phase 4 — Query Request Contract
+Vai trò
+
+Define chuẩn JSON request.
+
+Ví dụ:
+
+{
+  "baseEntity": "patient",
+  "selectFields": [
+    "patient.gender"
+  ],
+  "metrics": [],
+  "filters": [],
+  "groupBy": [],
+  "sort": [],
+  "limit": 100
+}
+Đây là “query language” của platform.
+
+Không define tốt phase này:
+
+UI khó evolve
+query plan khó maintain
+versioning đau đớn
+Phase 5 — Query Plan Builder
+Vai trò
+
+Không generate SQL trực tiếp.
+
+Mà build:
+
+QueryRequest
+   ↓
+SemanticResolver
+   ↓
+RelationshipResolver
+   ↓
+QueryPlan
+QueryPlan giống compiler IR
+
+Ví dụ:
+
+SELECT fields
+JOIN graph
+FILTER nodes
+GROUP BY
+METRICS
+SORT
+LIMIT
+Đây là chỗ platform bắt đầu “BI engine”.
+Phase 6 — SQL Generator
+Vai trò
+
+Convert QueryPlan → SQL Server query.
+
+Ví dụ:
+
+SELECT ...
+FROM ...
+JOIN ...
+WHERE ...
+GROUP BY ...
+ORDER BY ...
+Quan trọng nhất
+
+Không được:
+
+string concat raw SQL
+dùng user input trực tiếp
+
+Mọi thứ phải đi qua metadata whitelist.
+
+Đây là core engine thật sự.
+Phase 7 — Query Executor API
+Vai trò
+
+Run SQL thật.
+
+Input:
+
+QueryRequest
+
+Output:
+
+{
+  "columns": [],
+  "rows": []
+}
+Đây là endpoint frontend sẽ dùng.
+
+Ví dụ:
+
+POST /api/report-query/execute
+Phase 8 — Telerik UI Builder
+Cuối cùng mới tới UI
+
+Lúc này engine đã hoạt động.
+
+Frontend chỉ là:
+
+metadata-driven UI
+UI sẽ:
+load entities
+load fields
+build filters
+choose metrics
+render Telerik Grid
+Không hardcode form.
+Phase 9 — Report Persistence + Async Execution
+Vai trò
+
+Cho phép:
+
+save report
+run report
+background execution
+history
+download
+status tracking
+Bắt đầu có:
+ReportTemplate
+ReportRequest
+ReportExecution
+Worker
+Queue
+Phase 10 — Production Hardening
+Đây mới là enterprise-grade
+
+Bao gồm:
+
+JWT/Auth
+Role security
+Row-level security
+Caching
+Redis
+Export PDF/Excel
+S3
+Observability
+Rate limiting
+Audit log
+Timeout
+Circuit breaker
+Mental model đúng
+Phase 1-3
+= Semantic model layer
+
+Phase 4-6
+= Query compiler engine
+
+Phase 7
+= Execution layer
+
+Phase 8
+= Presentation layer
+
+Phase 9-10
+= Enterprise operational layer
+Quan trọng nhất
+
+Bạn đang build không phải “custom Telerik”.
+
+Bạn đang build:
+
+Metadata-driven semantic reporting engine
+
+Telerik chỉ là:
+
+rendering layer
+
+Đây là mindset đúng.

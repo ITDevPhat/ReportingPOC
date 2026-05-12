@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ReportingPlatform.Application.Interfaces;
 using ReportingPlatform.Application.Resolvers;
+using ReportingPlatform.Application.Validation;
 
 namespace ReportingPlatform.Application.DependencyInjection;
 
@@ -11,6 +12,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<ISemanticResolver, SemanticResolver>();
         services.AddScoped<IRelationshipGraphProvider, RelationshipGraphProvider>();
         services.AddScoped<IRelationshipResolver, RelationshipResolver>();
+        services.AddScoped<IReportQueryValidator, ReportQueryValidator>();
 
         return services;
     }
