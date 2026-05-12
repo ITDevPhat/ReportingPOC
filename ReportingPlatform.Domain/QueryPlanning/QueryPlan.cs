@@ -12,5 +12,6 @@ public sealed class QueryPlan
     public List<ResolvedGroupByPlan> GroupByFields { get; set; } = [];
     public List<ResolvedSortPlan> Sorts { get; set; } = [];
     public List<JoinPlan> Joins { get; set; } = [];
+    public Dictionary<string, string> EntityAliases { get; set; } = [];
     public int Limit { get; set; }
 }

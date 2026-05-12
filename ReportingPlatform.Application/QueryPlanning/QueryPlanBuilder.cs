@@ -51,25 +51,28 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
         var filterFields = await ResolveFilterFieldsAsync(normalizedRequest, cancellationToken);
         var groupByFields = await _semanticResolver.ResolveFieldsAsync(normalizedRequest.GroupBy, cancellationToken);
 
-        var selectPlans = selectFields.Select(MapSelectField).ToList();
-        var metricPlans = normalizedRequest.Metrics
-            .Zip(metricFields, MapMetric)
-            .ToList();
-        var filterPlans = normalizedRequest.Filters
-            .Zip(filterFields, MapFilter)
-            .ToList();
-        var groupByPlans = groupByFields.Select(MapGroupBy).ToList();
-        var sortPlans = normalizedRequest.Sort
-            .Select(sort => MapSort(sort, selectPlans, metricPlans))
-            .ToList();
         var requiredEntityKeys = GetRequiredEntityKeys(
             selectFields,
             metricFields,
             filterFields,
             groupByFields);
+        var entityAliases = BuildEntityAliases(normalizedRequest.BaseEntity, requiredEntityKeys);
+
+        var selectPlans = selectFields.Select(field => MapSelectField(field, entityAliases)).ToList();
+        var metricPlans = normalizedRequest.Metrics
+            .Zip(metricFields, (metric, field) => MapMetric(metric, field, entityAliases))
+            .ToList();
+        var filterPlans = normalizedRequest.Filters
+            .Zip(filterFields, (filter, field) => MapFilter(filter, field, entityAliases))
+            .ToList();
+        var groupByPlans = groupByFields.Select(field => MapGroupBy(field, entityAliases)).ToList();
+        var sortPlans = normalizedRequest.Sort
+            .Select(sort => MapSort(sort, selectPlans, metricPlans))
+            .ToList();
         var joins = await ResolveJoinsAsync(
             normalizedRequest.BaseEntity,
             requiredEntityKeys,
+            entityAliases,
             cancellationToken);
 
         return new QueryPlan
@@ -88,6 +91,7 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
             GroupByFields = groupByPlans,
             Sorts = sortPlans,
             Joins = joins,
+            EntityAliases = entityAliases,
             Limit = normalizedRequest.Limit
         };
     }
@@ -120,21 +124,28 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
         return fields;
     }
 
-    private static ResolvedSelectFieldPlan MapSelectField(ResolvedField field)
+    private static ResolvedSelectFieldPlan MapSelectField(
+        ResolvedField field,
+        IReadOnlyDictionary<string, string> entityAliases)
     {
         return new ResolvedSelectFieldPlan
         {
             SemanticKey = field.SemanticKey,
             EntityKey = field.EntityKey,
+            EntityAlias = entityAliases[field.EntityKey],
             FieldKey = field.FieldKey,
             DisplayName = field.FieldDisplayName,
             DataType = field.DataType,
+            PhysicalColumnName = field.PhysicalColumnName ?? string.Empty,
             SqlQualifiedName = field.SqlQualifiedName,
             OutputAlias = ToOutputAlias(field.FieldDisplayName, field.FieldKey)
         };
     }
 
-    private static ResolvedMetricPlan MapMetric(QueryMetricDefinition metric, ResolvedField field)
+    private static ResolvedMetricPlan MapMetric(
+        QueryMetricDefinition metric,
+        ResolvedField field,
+        IReadOnlyDictionary<string, string> entityAliases)
     {
         return new ResolvedMetricPlan
         {
@@ -142,33 +153,44 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
             Function = metric.Function.ToString(),
             FieldSemanticKey = field.SemanticKey,
             EntityKey = field.EntityKey,
+            EntityAlias = entityAliases[field.EntityKey],
             FieldKey = field.FieldKey,
             DataType = field.DataType,
+            PhysicalColumnName = field.PhysicalColumnName ?? string.Empty,
             SqlQualifiedName = field.SqlQualifiedName,
             Alias = metric.Alias
         };
     }
 
-    private static ResolvedFilterPlan MapFilter(QueryFilterDefinition filter, ResolvedField field)
+    private static ResolvedFilterPlan MapFilter(
+        QueryFilterDefinition filter,
+        ResolvedField field,
+        IReadOnlyDictionary<string, string> entityAliases)
     {
         return new ResolvedFilterPlan
         {
             FieldSemanticKey = field.SemanticKey,
             EntityKey = field.EntityKey,
+            EntityAlias = entityAliases[field.EntityKey],
             FieldKey = field.FieldKey,
             DataType = field.DataType,
+            PhysicalColumnName = field.PhysicalColumnName ?? string.Empty,
             Operator = filter.Operator.ToString(),
             Value = filter.Value
         };
     }
 
-    private static ResolvedGroupByPlan MapGroupBy(ResolvedField field)
+    private static ResolvedGroupByPlan MapGroupBy(
+        ResolvedField field,
+        IReadOnlyDictionary<string, string> entityAliases)
     {
         return new ResolvedGroupByPlan
         {
             SemanticKey = field.SemanticKey,
             EntityKey = field.EntityKey,
+            EntityAlias = entityAliases[field.EntityKey],
             FieldKey = field.FieldKey,
+            PhysicalColumnName = field.PhysicalColumnName ?? string.Empty,
             SqlQualifiedName = field.SqlQualifiedName
         };
     }
@@ -195,6 +217,7 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
     private async Task<List<JoinPlan>> ResolveJoinsAsync(
         string baseEntityKey,
         IReadOnlyList<string> requiredEntityKeys,
+        Dictionary<string, string> entityAliases,
         CancellationToken cancellationToken)
     {
         var joins = new List<JoinPlan>();
@@ -216,7 +239,7 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
             {
                 if (seenJoinSignatures.Add(join.JoinSignature))
                 {
-                    joins.Add(join);
+                    joins.Add(await EnrichJoinAsync(join, entityAliases, cancellationToken));
                 }
             }
         }
@@ -227,6 +250,38 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
             baseEntityKey);
 
         return joins;
+    }
+
+    private async Task<JoinPlan> EnrichJoinAsync(
+        JoinPlan join,
+        Dictionary<string, string> entityAliases,
+        CancellationToken cancellationToken)
+    {
+        var parentField = await _semanticResolver.ResolveFieldAsync(
+            $"{join.ParentEntityKey}.{join.ParentFieldKey}",
+            cancellationToken);
+        var childField = await _semanticResolver.ResolveFieldAsync(
+            $"{join.ChildEntityKey}.{join.ChildFieldKey}",
+            cancellationToken);
+
+        return new JoinPlan
+        {
+            ParentEntityKey = join.ParentEntityKey,
+            ParentAlias = GetOrCreateEntityAlias(join.ParentEntityKey, entityAliases),
+            ParentPhysicalSchemaName = parentField.PhysicalSchemaName ?? string.Empty,
+            ParentPhysicalTableName = parentField.PhysicalTableName ?? string.Empty,
+            ParentPhysicalColumnName = parentField.PhysicalColumnName ?? string.Empty,
+            ChildEntityKey = join.ChildEntityKey,
+            ChildAlias = GetOrCreateEntityAlias(join.ChildEntityKey, entityAliases),
+            ChildPhysicalSchemaName = childField.PhysicalSchemaName ?? string.Empty,
+            ChildPhysicalTableName = childField.PhysicalTableName ?? string.Empty,
+            ChildPhysicalColumnName = childField.PhysicalColumnName ?? string.Empty,
+            ParentFieldKey = join.ParentFieldKey,
+            ChildFieldKey = join.ChildFieldKey,
+            JoinType = join.JoinType,
+            Cardinality = join.Cardinality,
+            IsRequired = join.IsRequired
+        };
     }
 
     private static IReadOnlyList<string> GetRequiredEntityKeys(
@@ -260,6 +315,64 @@ public sealed class QueryPlanBuilder : IQueryPlanBuilder
             "lab_result" => "lr",
             _ => "t1"
         };
+    }
+
+    private static Dictionary<string, string> BuildEntityAliases(
+        string baseEntityKey,
+        IReadOnlyList<string> requiredEntityKeys)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [baseEntityKey] = GetEntityAlias(baseEntityKey)
+        };
+        var fallbackIndex = 1;
+
+        foreach (var entityKey in requiredEntityKeys)
+        {
+            if (aliases.ContainsKey(entityKey))
+            {
+                continue;
+            }
+
+            var alias = GetEntityAlias(entityKey);
+            if (alias == "t1")
+            {
+                do
+                {
+                    alias = $"t{fallbackIndex++}";
+                }
+                while (aliases.ContainsValue(alias));
+            }
+
+            aliases[entityKey] = alias;
+        }
+
+        return aliases;
+    }
+
+    private static string GetOrCreateEntityAlias(
+        string entityKey,
+        Dictionary<string, string> aliases)
+    {
+        if (aliases.TryGetValue(entityKey, out var existingAlias))
+        {
+            return existingAlias;
+        }
+
+        var alias = GetEntityAlias(entityKey);
+        if (alias == "t1")
+        {
+            var fallbackIndex = 1;
+            do
+            {
+                alias = $"t{fallbackIndex++}";
+            }
+            while (aliases.ContainsValue(alias));
+        }
+
+        aliases[entityKey] = alias;
+
+        return alias;
     }
 
     private static string ToOutputAlias(string displayName, string fieldKey)
