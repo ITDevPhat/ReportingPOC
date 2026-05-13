@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ReportingPlatform.Application.Interfaces;
 using ReportingPlatform.Domain.Enums;
@@ -10,20 +11,29 @@ namespace ReportingPlatform.Application.Validation;
 
 public sealed class ReportQueryValidator : IReportQueryValidator
 {
-    private const int MaxLimit = 10000;
-
     private readonly ISemanticResolver _semanticResolver;
     private readonly IRelationshipResolver _relationshipResolver;
     private readonly ILogger<ReportQueryValidator> _logger;
+    private readonly int _maxRows;
+    private readonly int _maxSelectedFields;
+    private readonly int _maxMetrics;
+    private readonly int _maxFilters;
+    private readonly int _maxGroupByFields;
 
     public ReportQueryValidator(
         ISemanticResolver semanticResolver,
         IRelationshipResolver relationshipResolver,
+        IConfiguration configuration,
         ILogger<ReportQueryValidator> logger)
     {
         _semanticResolver = semanticResolver;
         _relationshipResolver = relationshipResolver;
         _logger = logger;
+        _maxRows = GetInt(configuration, "ReportingEngine:MaxRows", 10000);
+        _maxSelectedFields = GetInt(configuration, "ReportingEngine:MaxSelectedFields", 50);
+        _maxMetrics = GetInt(configuration, "ReportingEngine:MaxMetrics", 20);
+        _maxFilters = GetInt(configuration, "ReportingEngine:MaxFilters", 30);
+        _maxGroupByFields = GetInt(configuration, "ReportingEngine:MaxGroupByFields", 20);
     }
 
     public async Task ValidateAsync(
@@ -35,8 +45,16 @@ public sealed class ReportQueryValidator : IReportQueryValidator
         var resolvedFields = new Dictionary<string, ResolvedField>(StringComparer.OrdinalIgnoreCase);
         var requiredEntityKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        _logger.LogInformation(
+            "Report query validation started. SelectFields={SelectFieldCount} Metrics={MetricCount} Filters={FilterCount} GroupBy={GroupByCount}",
+            normalizedRequest.SelectFields.Count,
+            normalizedRequest.Metrics.Count,
+            normalizedRequest.Filters.Count,
+            normalizedRequest.GroupBy.Count);
+
         ValidateBaseEntity(normalizedRequest, errors);
         ValidateLimit(normalizedRequest, errors);
+        ValidateCollectionLimits(normalizedRequest, errors);
         await ValidateSelectFieldsAsync(normalizedRequest, resolvedFields, requiredEntityKeys, errors, cancellationToken);
         await ValidateGroupByAsync(normalizedRequest, resolvedFields, requiredEntityKeys, errors, cancellationToken);
         await ValidateMetricsAsync(normalizedRequest, resolvedFields, requiredEntityKeys, errors, cancellationToken);
@@ -49,6 +67,8 @@ public sealed class ReportQueryValidator : IReportQueryValidator
             _logger.LogWarning("Report query request failed validation with {ErrorCount} errors.", errors.Count);
             throw new InvalidReportQueryException(errors);
         }
+
+        _logger.LogInformation("Report query validation succeeded.");
     }
 
     public ReportQueryRequest Normalize(ReportQueryRequest request)
@@ -99,15 +119,38 @@ public sealed class ReportQueryValidator : IReportQueryValidator
         }
     }
 
-    private static void ValidateLimit(ReportQueryRequest request, List<string> errors)
+    private void ValidateLimit(ReportQueryRequest request, List<string> errors)
     {
         if (request.Limit <= 0)
         {
             errors.Add("Limit must be greater than 0.");
         }
-        else if (request.Limit > MaxLimit)
+        else if (request.Limit > _maxRows)
         {
-            errors.Add($"Limit must be less than or equal to {MaxLimit}.");
+            errors.Add($"Limit must be less than or equal to {_maxRows}.");
+        }
+    }
+
+    private void ValidateCollectionLimits(ReportQueryRequest request, List<string> errors)
+    {
+        if (request.SelectFields.Count > _maxSelectedFields)
+        {
+            errors.Add($"Select fields count must be less than or equal to {_maxSelectedFields}.");
+        }
+
+        if (request.Metrics.Count > _maxMetrics)
+        {
+            errors.Add($"Metrics count must be less than or equal to {_maxMetrics}.");
+        }
+
+        if (request.Filters.Count > _maxFilters)
+        {
+            errors.Add($"Filters count must be less than or equal to {_maxFilters}.");
+        }
+
+        if (request.GroupBy.Count > _maxGroupByFields)
+        {
+            errors.Add($"Group by fields count must be less than or equal to {_maxGroupByFields}.");
         }
     }
 
@@ -516,5 +559,10 @@ public sealed class ReportQueryValidator : IReportQueryValidator
         }
 
         return null;
+    }
+
+    private static int GetInt(IConfiguration configuration, string key, int fallback)
+    {
+        return int.TryParse(configuration[key], out var value) ? value : fallback;
     }
 }

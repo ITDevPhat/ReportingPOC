@@ -18,25 +18,39 @@ public sealed class SqlServerQueryExecutor : IQueryExecutor
     private readonly IQueryPlanBuilder _queryPlanBuilder;
     private readonly ISqlGenerator _sqlGenerator;
     private readonly ISqlConnectionFactory _connectionFactory;
+    private readonly IQueryHashService _queryHashService;
+    private readonly IQueryResultCache _queryResultCache;
     private readonly ILogger<SqlServerQueryExecutor> _logger;
     private readonly int _commandTimeoutSeconds;
+    private readonly bool _enableQueryCaching;
+    private readonly TimeSpan _queryCacheTtl;
 
     public SqlServerQueryExecutor(
         IQueryPlanBuilder queryPlanBuilder,
         ISqlGenerator sqlGenerator,
         ISqlConnectionFactory connectionFactory,
+        IQueryHashService queryHashService,
+        IQueryResultCache queryResultCache,
         IConfiguration configuration,
         ILogger<SqlServerQueryExecutor> logger)
     {
         _queryPlanBuilder = queryPlanBuilder;
         _sqlGenerator = sqlGenerator;
         _connectionFactory = connectionFactory;
+        _queryHashService = queryHashService;
+        _queryResultCache = queryResultCache;
         _logger = logger;
         _commandTimeoutSeconds = int.TryParse(
             configuration["ReportingEngine:CommandTimeoutSeconds"],
             out var configuredTimeoutSeconds)
             ? configuredTimeoutSeconds
             : DefaultCommandTimeoutSeconds;
+        _enableQueryCaching = bool.TryParse(configuration["ReportingEngine:EnableQueryCaching"], out var enableCaching)
+            && enableCaching;
+        var cacheTtlMinutes = int.TryParse(configuration["ReportingEngine:QueryCacheTtlMinutes"], out var configuredCacheTtlMinutes)
+            ? configuredCacheTtlMinutes
+            : 30;
+        _queryCacheTtl = TimeSpan.FromMinutes(cacheTtlMinutes);
     }
 
     public async Task<QueryExecutionResult> ExecuteAsync(
@@ -44,11 +58,34 @@ public sealed class SqlServerQueryExecutor : IQueryExecutor
         CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+        var queryHash = _queryHashService.ComputeHash(request);
 
         try
         {
+            if (_enableQueryCaching)
+            {
+                var cachedResult = await _queryResultCache.GetAsync(queryHash, cancellationToken);
+                if (cachedResult is not null)
+                {
+                    stopwatch.Stop();
+                    if (!cachedResult.Warnings.Contains("Returned from cache", StringComparer.OrdinalIgnoreCase))
+                    {
+                        cachedResult.Warnings.Add("Returned from cache");
+                    }
+
+                    _logger.LogInformation(
+                        "Returned report query result from cache. QueryHash={QueryHash} RowCount={RowCount}",
+                        queryHash,
+                        cachedResult.RowCount);
+
+                    return cachedResult;
+                }
+            }
+
             var queryPlan = await _queryPlanBuilder.BuildAsync(request, cancellationToken);
             var generatedSql = await _sqlGenerator.GenerateAsync(queryPlan, cancellationToken);
+
+            _logger.LogInformation("Executing report query. QueryHash={QueryHash}", queryHash);
 
             await using var connection = GetSqlConnection();
             await connection.OpenAsync(cancellationToken);
@@ -69,7 +106,7 @@ public sealed class SqlServerQueryExecutor : IQueryExecutor
 
             stopwatch.Stop();
 
-            return new QueryExecutionResult
+            var result = new QueryExecutionResult
             {
                 Success = true,
                 Columns = columns,
@@ -80,6 +117,19 @@ public sealed class SqlServerQueryExecutor : IQueryExecutor
                 ExecutionTimeMs = stopwatch.ElapsedMilliseconds,
                 Warnings = generatedSql.Warnings
             };
+
+            if (_enableQueryCaching)
+            {
+                await _queryResultCache.SetAsync(queryHash, result, _queryCacheTtl, cancellationToken);
+            }
+
+            _logger.LogInformation(
+                "Executed report query. QueryHash={QueryHash} RowCount={RowCount} DurationMs={DurationMs}",
+                queryHash,
+                result.RowCount,
+                result.ExecutionTimeMs);
+
+            return result;
         }
         catch (InvalidReportQueryException)
         {
@@ -88,7 +138,7 @@ public sealed class SqlServerQueryExecutor : IQueryExecutor
         catch (Exception exception)
         {
             stopwatch.Stop();
-            _logger.LogError(exception, "Failed to execute report query.");
+            _logger.LogError(exception, "Failed to execute report query. QueryHash={QueryHash}", queryHash);
 
             return new QueryExecutionResult
             {

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ReportingPlatform.Application.Interfaces;
 using ReportingPlatform.Application.QueryPlanning;
 using ReportingPlatform.Application.Resolvers;
+using ReportingPlatform.Application.Services;
 using ReportingPlatform.Application.SqlGeneration;
 using ReportingPlatform.Application.Validation;
 
@@ -17,6 +18,8 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IReportQueryValidator, ReportQueryValidator>();
         services.AddScoped<IQueryPlanBuilder, QueryPlanBuilder>();
         services.AddScoped<ISqlGenerator, SqlServerQueryGenerator>();
+        services.AddScoped<IReportExecutionService, ReportExecutionService>();
+        services.AddScoped<IQueryHashService, QueryHashService>();
 
         return services;
     }
