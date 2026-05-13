@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clinical Report Builder</title>
+    <link rel="stylesheet" href="https://kendo.cdn.telerik.com/themes/8.2.1/default/default-main.css">
+    <link rel="stylesheet" href="/css/report-builder.css">
+</head>
+<body>
+    <main class="app-shell">
+        <header class="topbar">
+            <div>
+                <h1>Clinical Report Builder</h1>
+                <p>Build and execute metadata-driven clinical reports.</p>
+            </div>
+            <div class="actions">
+                <button id="loadDemoButton" type="button">Load Demo Query</button>
+                <button id="runReportButton" type="button" class="primary">Run Report</button>
+            </div>
+        </header>
+
+        <section id="errorPanel" class="error-panel" hidden></section>
+
+        <section class="builder-grid">
+            <div class="panel">
+                <h2>Entity & Fields</h2>
+                <label for="baseEntitySelect">Base Entity</label>
+                <select id="baseEntitySelect"></select>
+
+                <label for="selectFieldsSelect">Select Fields</label>
+                <select id="selectFieldsSelect" multiple size="10"></select>
+
+                <label for="manualSelectFieldsInput">Manual Select Fields</label>
+                <textarea id="manualSelectFieldsInput" rows="3" placeholder="patient.unknown"></textarea>
+
+                <label for="groupBySelect">Group By</label>
+                <select id="groupBySelect" multiple size="7"></select>
+            </div>
+
+            <div class="panel">
+                <h2>Metric</h2>
+                <div class="field-row">
+                    <label for="metricKeyInput">Metric Key</label>
+                    <input id="metricKeyInput" type="text" placeholder="patient_count">
+                </div>
+                <div class="field-row">
+                    <label for="metricFunctionSelect">Function</label>
+                    <select id="metricFunctionSelect">
+                        <option value="">None</option>
+                        <option value="Count">Count</option>
+                        <option value="CountDistinct">CountDistinct</option>
+                        <option value="Sum">Sum</option>
+                        <option value="Avg">Avg</option>
+                        <option value="Min">Min</option>
+                        <option value="Max">Max</option>
+                    </select>
+                </div>
+                <div class="field-row">
+                    <label for="metricFieldSelect">Field</label>
+                    <select id="metricFieldSelect"></select>
+                </div>
+                <div class="field-row">
+                    <label for="metricAliasInput">Alias</label>
+                    <input id="metricAliasInput" type="text" placeholder="PatientCount">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Filter</h2>
+                <div class="field-row">
+                    <label for="filterFieldSelect">Field</label>
+                    <select id="filterFieldSelect"></select>
+                </div>
+                <div class="field-row">
+                    <label for="filterOperatorSelect">Operator</label>
+                    <select id="filterOperatorSelect">
+                        <option value="">None</option>
+                        <option value="Equals">Equals</option>
+                        <option value="Between">Between</option>
+                        <option value="In">In</option>
+                        <option value="Contains">Contains</option>
+                        <option value="GreaterThan">GreaterThan</option>
+                        <option value="LessThan">LessThan</option>
+                        <option value="IsNull">IsNull</option>
+                        <option value="IsNotNull">IsNotNull</option>
+                    </select>
+                </div>
+                <div class="field-row">
+                    <label for="filterValueInput">Value</label>
+                    <input id="filterValueInput" type="text" placeholder="Male or 2024-01-01,2024-12-31">
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Sort & Limit</h2>
+                <label for="sortFieldSelect">Sort Field</label>
+                <select id="sortFieldSelect"></select>
+
+                <label for="sortDirectionSelect">Direction</label>
+                <select id="sortDirectionSelect">
+                    <option value="Asc">Asc</option>
+                    <option value="Desc">Desc</option>
+                </select>
+
+                <label for="limitInput">Limit</label>
+                <input id="limitInput" type="number" min="1" max="10000" value="100">
+            </div>
+        </section>
+
+        <section class="results-layout">
+            <div class="panel results-panel">
+                <div class="panel-heading">
+                    <h2>Results</h2>
+                    <span id="resultSummary">No rows yet</span>
+                </div>
+                <div id="resultsGrid"></div>
+                <div id="resultsTableFallback"></div>
+            </div>
+
+            <aside class="panel debug-panel">
+                <h2>SQL Preview</h2>
+                <pre id="sqlPreview"></pre>
+                <h2>Parameters</h2>
+                <pre id="parametersPreview">{}</pre>
+            </aside>
+        </section>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://kendo.cdn.telerik.com/2024.3.1015/js/kendo.all.min.js"></script>
+    <script src="/js/report-builder.js?v=phase8"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../ReportingPlatform.Application/ReportingPlatform.Application.csproj" />
+  <Project Path="../ReportingPlatform.Domain/ReportingPlatform.Domain.csproj" />
+  <Project Path="../ReportingPlatform.Infrastructure/ReportingPlatform.Infrastructure.csproj" />
+  <Project Path="ReportingPlatformAPI.csproj" />
+</Solution>
